@@ -19,7 +19,14 @@
 | Q11 | `CreateIngestion` の 32 回/24 時間がデータセット単位か               | 1 日 1 回なら影響しない（頻度を上げる場合だけ） | API で連続実行する                 |
 | Q12 | 使う DB のエンジンバージョンに対応しているか                         | 接続できるかどうか           | Validate connection                           |
 | Q13 | カスタム権限の `ShareDashboards` を DENY にした Author の挙動        | 共有作業の分担               | Author で共有を試す                           |
-| Q14 | Quick Sight 独自のセッション時間の設定があるか                       | 放置端末の対策               | 管理画面と公式ドキュメントで確認              |
+| Q14 | Quick Sight 独自のセッション時間の設定があるか（IAM ユーザーのコンソールは既定 12 時間。変える設定は公式に記載なし） | 放置端末の対策 | 管理画面と公式ドキュメントで確認 |
+| Q15 | 「Quick Sight 以外を拒否」のポリシーの下で、Quick Sight の画面が問題なく使えるか | IAM ポリシーの設計 | 検証環境でビジネス部門の IAM ユーザーを作って試す |
+| Q16 | 自動登録で作られるロールが想定どおりか（Reader / Author）            | 権限の誤り、課金             | 初回アクセス後に Manage users で確認          |
+| Q17 | CLS の見せる相手をメンバーのいないグループにして、全員に禁止できるか（所有者を含む） | 個人情報の保護 | CLS を設定し、所有者と Reader で列が見えないか確かめる |
+| Q18 | シークレットの自動ローテーション後も、取り込みと直接クエリが成功するか | 定期的な接続断             | ローテーションを手動で実行して試す            |
+| Q19 | RLS のルールに IAM ユーザーを書く形式                                | 行の制限が効くか             | ユーザー名で書いて、Reader で開いて試す       |
+| Q20 | Control Tower のガードレール（SCP）が Quick Sight の操作やリージョンを妨げないか | サインアップや VPC 接続ができない | 検証用アカウントで同じ SCP の下で試す |
+| Q21 | Admin にも SPICE 10GB が付くか                                       | 容量の見積もり               | 管理画面の SPICE 容量を見る                   |
 
 ## 2. 公式情報どうしの食い違い
 
@@ -41,7 +48,7 @@
 
 ## 4. 出典
 
-確認日はいずれも 2026-10-20。「第三者情報」「コミュニティ情報」と書いたもの以外は AWS 公式。
+確認日は 2026-10-20 または 2026-10-21。「第三者情報」「コミュニティ情報」と書いたもの以外は AWS 公式。
 
 製品・料金:
 
@@ -93,3 +100,7 @@
 - Q5 GetDashboard の欠落（コミュニティ情報）: https://community.amazonquick.com/t/why-does-cloudtrail-show-querydatabase-events-for-quicksight-users-without-corresponding-getdashboard-events/46722
 - Q7 既定値が空のときの全件表示（コミュニティ情報）: https://community.amazonquick.com/t/parameter-field-when-kept-blank-and-is-minimized-displays-all/23017
 - Q11 32 回の上限の単位（コミュニティ情報）: https://community.amazonquick.com/t/is-the-32-times-per-24-hours-createingestion-limit-applied-per-dataset-or-per-aws-account/51371
+- Q14 IAM ユーザーのコンソールのセッション時間: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_switch-role-console.html
+- Q17 CLS の規則には見せる相手が最低 1 つ要る: https://docs.aws.amazon.com/quicksight/latest/APIReference/API_ColumnLevelPermissionRule.html
+- 名前空間（IAM ユーザーは既定の名前空間だけ）: https://docs.aws.amazon.com/quick/latest/userguide/namespaces.html
+- Q20 Control Tower のログ用アカウントと組織の証跡: https://docs.aws.amazon.com/controltower/latest/userguide/special-accounts.html

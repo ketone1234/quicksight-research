@@ -2,10 +2,12 @@
 
 ## 1. 結論
 
+- 本件の DB は RDS for PostgreSQL。既存のリードレプリカにつなぐ（新しい DB は作らない）。ポートは 5432
 - プライベートサブネットにある RDS / Aurora へは「VPC 接続」でつなぐ（Enterprise 限定）
 - 接続先は、RDS ならリードレプリカ、Aurora ならリーダーエンドポイントにする（本番の書き込みと負荷を分ける）
 - DB ユーザーは読み取り専用にし、SPICE 用と直接クエリ用の 2 つに分ける
-- 認証情報は Secrets Manager に置く（設定は API / CLI）。ユーザー名とパスワードを直接入れる方法もある
+- 認証情報は Secrets Manager に置き、自動ローテーションする（6.2 の注意を参照）
+  - 画面からはシークレットを選べないので、データソースは CLI で作る
 - TLS は有効のままにする
 
 ## 2. 対応データソース（本件に関係するもの）
@@ -149,15 +151,7 @@ aws quicksight describe-vpc-connection --region ap-northeast-1 --aws-account-id 
 
 ### 5.2 SQL の例
 
-MySQL / Aurora MySQL:
-
-```sql
-CREATE USER 'qs_direct_ro'@'%' IDENTIFIED BY '<password>' REQUIRE SSL;
-GRANT SELECT ON appdb.v_inq_contract TO 'qs_direct_ro'@'%';
-GRANT SELECT ON appdb.v_inq_payment  TO 'qs_direct_ro'@'%';
-```
-
-PostgreSQL / Aurora PostgreSQL:
+PostgreSQL（本件）:
 
 ```sql
 CREATE ROLE qs_direct_ro LOGIN PASSWORD '<password>';
@@ -167,6 +161,18 @@ GRANT SELECT ON inquiry.v_inq_contract, inquiry.v_inq_payment TO qs_direct_ro;
 ALTER ROLE qs_direct_ro SET statement_timeout = '120s';
 ```
 
+MySQL / Aurora MySQL（参考）:
+
+```sql
+CREATE USER 'qs_direct_ro'@'%' IDENTIFIED BY '<password>' REQUIRE SSL;
+GRANT SELECT ON appdb.v_inq_contract TO 'qs_direct_ro'@'%';
+GRANT SELECT ON appdb.v_inq_payment  TO 'qs_direct_ro'@'%';
+```
+
+- DB ユーザーの作成と GRANT はプライマリで実行する。リードレプリカは読み取り専用で、プライマリの変更がそのまま反映される
+- SELECT は元のテーブルではなく、公開用のビューにだけ付ける
+  - こうすると、ビューから除いた列（電話番号とそのハッシュなど）は、この DB ユーザーでは読めない
+  - 開発部門が直接クエリで元のテーブルを見ようとしても、DB 側で拒否される
 - 120 秒でタイムアウトしても、DB 側でクエリが走り続けることがある。DB 側でも文のタイムアウトを設定しておく
 - PostgreSQL で TLS を強制するには、パラメータグループで `rds.force_ssl = 1` にする
 - MySQL でホストを `'user'@'host'` で絞る場合は、VPC 接続のサブネットの範囲に合わせる
@@ -183,12 +189,13 @@ ALTER ROLE qs_direct_ro SET statement_timeout = '120s';
 | ----------------- | --------------------------------------------------------- |
 | Data source name  | 例: `prod-db-direct`（SPICE 用と直接クエリ用で分ける）     |
 | Connection type   | 4 章で作った VPC 接続の名前                               |
-| Database server   | RDS / Aurora のエンドポイント（ポート番号は付けない）     |
-| Port              | 3306 / 5432                                               |
+| Database server   | リードレプリカのエンドポイント（ポート番号は付けない）    |
+| Port              | 5432（MySQL なら 3306）                                   |
 | Database name     | 接続する DB 名                                            |
 | UserName/Password | 5 章の DB ユーザー                                        |
 | Enable SSL        | オン（既定）                                              |
 
+- この手順では認証情報を直接入力する。Secrets Manager を使う場合は、6.3 の CLI で作る
 - RDS の自動検出カードもあるが、VPC 接続を選べるかは Redshift でしか確かめられていない。手動のカードを使う（要検証）
 - 作成後、テーブルを選ぶ画面で SPICE か直接クエリかを選ぶ（「データセット」ページ）
 
@@ -201,24 +208,34 @@ ALTER ROLE qs_direct_ro SET statement_timeout = '120s';
 5. シークレットを KMS のカスタマー管理キーで暗号化している場合は、上記ロールに `kms:Decrypt` を付ける
 
 - 注意: データソースを画面から編集すると、シークレットの指定が外れる。`update-data-source` で戻す
+  - 外れたまま自動ローテーションが走ると、古いパスワードのままになり接続できなくなる
 - API を呼ぶ人の IAM に `secretsmanager:GetSecretValue`（対象シークレットに限定）が要る
 
-### 6.3 CLI での作成例（Aurora MySQL、VPC 接続、Secrets Manager）
+自動ローテーションを使う場合の注意（「公式」と書いたもの以外は設計上の注意）:
+
+- パスワードの変更はプライマリで行う必要がある（リードレプリカは読み取り専用）
+  - ローテーション用の関数が接続する先（シークレットの `host`）は、プライマリのエンドポイントにする
+- Quick Sight が接続する先は、シークレットではなくデータソースの設定（リードレプリカのエンドポイント）で決まる
+  - Quick Sight はシークレットの `username` と `password` だけを使い、他の項目は無視する（公式）
+- ローテーションで変わった値は、Quick Sight が次にシークレットを読むときに使われる（公式）
+  - 接続のたびに読むのか、しばらく覚えておくのかは公式に記載がない。ローテーション直後に取り込みと直接クエリを試す（要検証）
+
+### 6.3 CLI での作成例（RDS for PostgreSQL のリードレプリカ、VPC 接続、Secrets Manager）
 
 ```json
 {
   "AwsAccountId": "111122223333",
   "DataSourceId": "prod-db-direct",
   "Name": "prod-db-direct",
-  "Type": "AURORA",
-  "DataSourceParameters": {"AuroraParameters": {
-    "Host": "mycluster.cluster-ro-xxxx.ap-northeast-1.rds.amazonaws.com",
-    "Port": 3306, "Database": "appdb"}},
+  "Type": "POSTGRESQL",
+  "DataSourceParameters": {"PostgreSqlParameters": {
+    "Host": "mydb-replica.xxxx.ap-northeast-1.rds.amazonaws.com",
+    "Port": 5432, "Database": "appdb"}},
   "Credentials": {"SecretArn": "arn:aws:secretsmanager:ap-northeast-1:111122223333:secret:qs/direct-ro-AbCdEf"},
   "VpcConnectionProperties": {"VpcConnectionArn": "<create-vpc-connection の応答の Arn>"},
   "SslProperties": {"DisableSsl": false},
   "Permissions": [{
-    "Principal": "arn:aws:quicksight:ap-northeast-1:111122223333:group/default/dev-authors",
+    "Principal": "arn:aws:quicksight:ap-northeast-1:111122223333:group/default/dev-members",
     "Actions": ["quicksight:DescribeDataSource", "quicksight:DescribeDataSourcePermissions",
                 "quicksight:PassDataSource"]
   }]
@@ -259,7 +276,7 @@ aws quicksight create-data-source --region ap-northeast-1 --cli-input-json file:
 
 ## 9. 出典
 
-確認日はいずれも 2026-10-20。「第三者情報」「コミュニティ情報」と書いたもの以外は AWS 公式。
+確認日は 2026-10-20 または 2026-10-21。「第三者情報」「コミュニティ情報」と書いたもの以外は AWS 公式。
 
 - 2 章 対応データソース
   - 対応データソースとバージョン: https://docs.aws.amazon.com/quicksight/latest/user/supported-data-sources.html
@@ -288,6 +305,8 @@ aws quicksight create-data-source --region ap-northeast-1 --cli-input-json file:
   - ホスト制限と pg_hba.conf: https://docs.aws.amazon.com/quicksight/latest/user/configure-access.html
   - 出典なし（一般的な RDS / DB の設定）: リードレプリカへの接続、DB 側の文タイムアウト、`rds.force_ssl`、MySQL の information_schema の見え方
 - 6 章 データソースの作成
+  - ローテーション後の値の反映、`username` と `password` 以外は無視: https://docs.aws.amazon.com/quick/latest/userguide/secrets-manager-integration.html
+  - 出典なし（設計上の注意）: ローテーションの接続先をプライマリにすること
   - データベースからのデータセット作成: https://docs.aws.amazon.com/quicksight/latest/user/create-a-database-data-set.html
   - VPC 接続を使うデータソース: https://docs.aws.amazon.com/quicksight/latest/user/vpc-creating-a-quicksight-data-source-profile.html
   - データソースの作成: https://docs.aws.amazon.com/quicksight/latest/user/create-a-data-source.html

@@ -53,8 +53,8 @@
   "eventType": "AwsServiceEvent",
   "readOnly": true,
   "eventTime": "2026-10-20T01:23:45Z",
-  "userIdentity": {"type": "IAMUser", "userName": "po-yamada",
-                   "arn": "arn:aws:iam::111122223333:user/po-yamada"},
+  "userIdentity": {"type": "IAMUser", "userName": "biz-yamada",
+                   "arn": "arn:aws:iam::111122223333:user/biz-yamada"},
   "serviceEventDetails": {
     "eventRequestDetails": {"dashboardId": "arn:aws:quicksight:ap-northeast-1:111122223333:dashboard/<id>"},
     "eventResponseDetails": {"dashboardDetails": {
@@ -86,6 +86,15 @@
 
 ### 5.1 証跡の作成
 
+AWS Control Tower で管理しているマルチアカウント環境では、先に既存の証跡を確かめる。
+
+- Control Tower の CloudTrail 連携を有効にしていれば、組織の証跡（`aws-controltower-BaselineCloudTrail`）がある
+  - ログは、ログ集約用のアカウント（CloudTrail administrator アカウント。旧称ログアーカイブ）の S3 バケットに入る
+  - ランディングゾーン 4.0（2025-11）以降、CloudTrail 連携は選択式になった。有効かどうかを確かめる
+- ログの保存期間の既定は 1 年。長期保管の要件に合わせて延ばす（最大 15 年。ランディングゾーンの設定で変える）
+- 組織の証跡があれば、新しい証跡は作らなくてよい。Athena の検索先を組織の証跡のバケットにする
+- 組織の証跡がない場合は、次のように作る
+
 ```bash
 aws cloudtrail create-trail --name qs-audit --s3-bucket-name <log-bucket> \
   --is-multi-region-trail --enable-log-file-validation --kms-key-id <KMS キーの ARN>
@@ -101,6 +110,9 @@ aws cloudtrail start-logging --name qs-audit
 
 - ログ用の S3 バケットは専用にし、できれば別の AWS アカウントに置く
 - 保存期間は S3 のライフサイクルで決める（公式の決まりはないので、社内の規程に合わせる）
+- 長期保管中の改ざんや削除を防ぐには、S3 のオブジェクトロックを使う
+  - 保存期間を決めて、その間はオブジェクトの上書きと削除をできなくする
+  - コンプライアンスモードにすると、管理者でも期間中は解除できない。期間は慎重に決める
 - 整合性検証: 1 時間ごとにダイジェストファイルが届く。検証コマンドは次のとおり
 
 ```bash
@@ -191,7 +203,7 @@ WHERE eventsource = 'signin.amazonaws.com' AND eventname = 'ConsoleLogin'
 
 ## 11. 出典
 
-確認日はいずれも 2026-10-20。「第三者情報」「コミュニティ情報」と書いたもの以外は AWS 公式。
+確認日は 2026-10-20 または 2026-10-21。「第三者情報」「コミュニティ情報」と書いたもの以外は AWS 公式。
 
 - 1 章 結論
   - CloudTrail Lake の新規受付終了: https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-lake-service-availability-change.html
@@ -212,6 +224,10 @@ WHERE eventsource = 'signin.amazonaws.com' AND eventname = 'ConsoleLogin'
   - userIdentity の項目: https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-event-reference-user-identity.html
   - Quick Sight のサインインイベントがない（コミュニティ情報）: https://community.amazonquick.com/t/event-name-to-capture-user-login-to-quick-sight/41294
 - 5 章 CloudTrail の設定
+  - Control Tower のログ用アカウントと組織の証跡: https://docs.aws.amazon.com/controltower/latest/userguide/special-accounts.html
+  - Control Tower のログの保存期間: https://docs.aws.amazon.com/controltower/latest/userguide/configure-log-retention.html
+  - ランディングゾーン 4.0 の変更点: https://docs.aws.amazon.com/controltower/latest/userguide/2025-all.html
+  - S3 のオブジェクトロック: https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html
   - create-trail の CLI: https://docs.aws.amazon.com/cli/latest/reference/cloudtrail/create-trail.html
   - 管理イベントの記録: https://docs.aws.amazon.com/awscloudtrail/latest/userguide/logging-management-events-with-cloudtrail.html
   - セキュリティのベストプラクティス: https://docs.aws.amazon.com/awscloudtrail/latest/userguide/best-practices-security.html

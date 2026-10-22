@@ -3,7 +3,7 @@
 ## 1. 結論
 
 - 認証方式は「(Recommended) Password-based or Single-Sign On」を選ぶ（作成後は変更できない）
-- 利用者ごとに個人の IAM ユーザーを使う。共有の IAM ユーザーや共有ロールは使わない（証跡で個人を特定できなくなる）
+- IAM ユーザーは個人ごとに作る（2026-10-22 に決定）。共有の IAM ユーザーや共有ロールは使わない（証跡で個人を特定できなくなる）
   - ビジネス部門は IAM ユーザーを新しく作る。開発部門は既存の IAM ユーザーを使う
   - アクセスキーは発行せず、マネジメントコンソールだけで使う
 - MFA を全員に必須にする（仮想 MFA を既定、FIDO セキュリティキーも可）。初回サインイン時に登録させる
@@ -234,7 +234,7 @@ aws quicksight update-dashboard-permissions --region ap-northeast-1 --aws-accoun
 
 | 適用先        | 禁止する項目                                                       | 目的                           |
 | ------------- | ------------------------------------------------------------------ | ------------------------------ |
-| Reader ロール | `ExportToCsv`、`ExportToExcel`、`ExportToPdf`、`PrintReports`      | データの持ち出し防止（社内方針次第） |
+| Reader ロール | なし（ダウンロードは制限しないと決定）                             | -                                    |
 | Author ロール | `CreateAndUpdateDataSources`、`ShareDataSources`、`ShareDashboards` | 直接クエリの資産がビジネス部門へ渡るのを防ぐ |
 | アカウント    | 生成 AI の機能（`--governance` で既定を拒否）                      | 不要な機能と課金の防止         |
 

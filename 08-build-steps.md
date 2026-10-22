@@ -18,6 +18,7 @@
 - [ ] DB の監査ログの保存期間
 - [ ] マルチアカウントの統制（AWS Control Tower のガードレール、SCP）と矛盾しないか
 - [ ] 本番の前に、検証環境（試用アカウント）で権限とアクセスを確かめるか
+- [ ] 試用アカウントで、認証方式「Single-Sign On Only」のまま IAM ユーザーで使えるかを確かめる（4 章の認証方式を決める）
 
 ## 1. 証跡の基盤を先に作る（利用証跡）
 
@@ -52,7 +53,7 @@
 - [ ] サインアップ専用の IAM ロールを用意する（AdministratorAccess を使わない）
 - [ ] AWS コンソールで Quick を開き、サインアップする
   - リージョン: アジアパシフィック（東京）
-  - 認証方式: (Recommended) Password-based or Single-Sign On
+  - 認証方式: Single-Sign On Only（試用で使えなかった場合は (Recommended) Password-based or Single-Sign On）
 - [ ] 自分のロールが Admin Pro になっていないか確認し、なっていれば Admin に変える（$250/月 を避ける）
 - [ ] SPICE の自動購入をオフにする（足りなくなってきたら手動で追加購入する）
 - [ ] Account termination protection がオンか確認する
@@ -128,6 +129,7 @@
 - 退職や異動のときは IAM ユーザーと Quick Sight ユーザーの両方を消す。月の途中で消しても、その月は満額
 - ユーザーを消すと、その人だけが所有する資産も消える。消す前に所有者を移す
 - 共有範囲と証跡を定期的に確認する（月 1 回など）
+- 認証方式を Password-based or Single-Sign On にした場合は、Quick Sight 専用の ID が混ざっていないかも定期的に確認する
 
 ## 13. 出典
 
